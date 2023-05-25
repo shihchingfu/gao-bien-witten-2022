@@ -1,0 +1,225 @@
+---
+format: revealjs
+self-contained: true
+---
+
+```{r}
+#| message: false
+#| include: false
+library(mvtnorm)
+library(tidyverse)
+library(car)
+library(fastcluster)
+library(emmeans)
+library(clusterpval)
+library(palmerpenguins)
+```
+
+## Paper Review
+
+<center>
+
+![<https://doi.org/10.1080/01621459.2022.2116331>](figures/title-abstract.png)
+
+</center>
+
+
+## Summary 
+
+1. Hypothesis testing for difference in means of clusters.
+2. Clusters have been obtained using agglomerative clustering.
+3. Clustering and hypothesis testing performed on same dataset ('double dipping').
+4. Selective inference for controlling Type I error rate.
+
+## Type I Error Rate
+
+## p-values
+
+## Agglomerative Clustering
+
+
+## "Double Dipping"
+
+```{r}
+N <- 100
+K <- 3
+
+set.seed(2)
+dat <- data.frame(
+  X1 = rnorm(N),
+  X2 = rnorm(N)
+)
+
+dat |> 
+  ggplot() +
+  aes(x = X1, y = X2) +
+  geom_point() +
+  coord_fixed() +
+  theme_bw(base_size=14) 
+```
+
+```{r}
+hc <- fastcluster::hclust(dist(dat)^2, "average")
+
+dat <- dat |> 
+  mutate(cluster = factor(cutree(hc, k = K)))
+
+dat_centroids <- dat |> 
+  group_by(cluster) |> 
+  summarise(X1bar = mean(X1),
+            X2bar = mean(X2))
+
+dat |> 
+  ggplot() +
+  aes(x = X1, y = X2, colour = cluster) +
+  geom_point() +
+  geom_point(aes(x=X1bar, y=X2bar, col=cluster), shape=17, cex=6, data=dat_centroids) + 
+  coord_fixed() +
+  theme_bw(base_size=14) 
+```
+
+
+```{r}
+dat <- dat |> 
+  rowwise() |> 
+  mutate( mu_i = (X1 + X2)/2 ) |> 
+  ungroup()
+
+dat |> 
+  group_by(cluster) |> 
+  summarise(n = n(), mu_bar = mean(mu_i))
+```
+
+```{r}
+lm(mu_i ~ cluster, dat) |> emmeans(pairwise ~ cluster)
+```
+
+
+## Sample Splitting
+
+```{r}
+dat_training <- dat[1:50,1:2]
+dat_test <- dat[51:100,1:2]
+
+hc_training <- fastcluster::hclust(dist(dat_training)^2, "average")
+
+dat_training <- dat_training |> 
+  mutate(cluster = factor(cutree(hc_training, k = K))) |> 
+  rowwise() |> 
+  mutate( mu_i = (X1 + X2)/2 ) |> 
+  ungroup()
+
+dat_training_centroids <- dat_training |> 
+  group_by(cluster) |> 
+  summarise(X1bar = mean(X1),
+            X2bar = mean(X2))
+
+dat_training |> 
+  ggplot() +
+  aes(x = X1, y = X2, colour = cluster) +
+  geom_point() +
+  geom_point(aes(x=X1bar, y=X2bar, col=cluster), shape=17, cex=6, data=dat_training_centroids) + 
+  coord_fixed() +
+  theme_bw(base_size=14) 
+```
+
+```{r}
+lm(mu_i ~ cluster, dat_training) |> emmeans(pairwise ~ cluster)
+```
+
+
+```{r}
+library(class)
+
+dat_test <- dat_test |> 
+  mutate(cluster = knn(dat_training[,1:2], dat_test, dat_training$cluster, k = K)) |> 
+  rowwise() |> 
+  mutate( mu_i = (X1 + X2)/2 ) |> 
+  ungroup()
+
+dat_test_centroids <- dat_test |> 
+  group_by(cluster) |> 
+  summarise(X1bar = mean(X1),
+            X2bar = mean(X2))
+
+dat_test |> 
+  ggplot() +
+  aes(x = X1, y = X2, colour = cluster) +
+  geom_point(aes(x=X1bar, y=X2bar, col=cluster), shape=17, cex=6, data=dat_test_centroids) + 
+  geom_point() +
+  coord_fixed() +
+  theme_bw(base_size=14) 
+```
+
+```{r}
+lm(mu_i ~ cluster, dat_test) |> emmeans(pairwise ~ cluster)
+```
+
+## Palmer Penguins
+
+```{r}
+penguin_dat <- penguins |> 
+  drop_na() |> 
+  filter(sex == "female") |> 
+  select(species, bill_length_mm, flipper_length_mm)
+
+penguin_dat |> 
+  ggplot() + 
+  aes(x = flipper_length_mm, y = bill_length_mm, shape = species) +
+  geom_point(size = 3, fill="grey", colour="black") + 
+  scale_shape_manual(name="Species", values=c(21, 24, 22)) + 
+  ylab("Bill length (mm)") + xlab("Flipper length (mm)") + coord_fixed() + 
+  theme_bw(base_size=14) + ggtitle("Penguins") + theme(legend.position="right")
+```
+
+```{r}
+X <- as.matrix(penguin_dat[, -1]) 
+hcl <- hclust(dist(X, method="euclidean")^2, method="average") 
+plot(as.dendrogram(hcl), leaflab="none")
+abline(h=(hcl$height[nrow(X) - 6] + 50), lty="dashed", col="darkgrey")
+```
+
+```{r}
+plot(as.dendrogram(hcl), leaflab="none")
+abline(h=(hcl$height[nrow(X) - 6] + 50), lty="dashed", col="darkgrey")
+rect_hier_clusters(hcl, k=6, which=1:6, border=RColorBrewer::brewer.pal(6, "Dark2")[c(6, 1, 5, 4, 3, 2)])
+```
+
+```{r}
+table(penguin_dat$species, cutree(hcl,k=6))
+```
+
+```{r}
+penguin_dat |> 
+  ggplot() + 
+  aes(x=flipper_length_mm, y = bill_length_mm, shape= species, fill = as.factor(cutree(hcl, 6))) +
+  geom_point(size = 3, colour="black") + 
+  scale_fill_discrete(name="Clusters", guide=guide_legend(ncol=2, override.aes=list(shape=21))) + 
+  scale_shape_manual(name="Species", values=c(21, 24, 22), guide=guide_legend(override.aes=list(fill="black"))) +
+  ylab("Bill length (mm)") + xlab("Flipper length (mm)") + coord_fixed() + 
+  theme_bw(base_size=14) + ggtitle("Penguins") + theme(legend.position="right") 
+```
+
+
+
+## Results
+
+![](figures/fig1.png)
+
+##
+
+![](figures/fig2.png)
+
+##
+
+![](figures/fig3.png){width=600px}
+
+## Conclusions
+
+
+
+## Statistical Takeaways
+
+
+
+
