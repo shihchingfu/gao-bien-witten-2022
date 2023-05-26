@@ -13,32 +13,100 @@ library(fastcluster)
 library(emmeans)
 library(clusterpval)
 library(palmerpenguins)
+library(latex2exp)
+library(patchwork)
+library(ggdendro)
+library(class)
 ```
 
 ## Paper Review
 
-<center>
+<center>![https://doi.org/10.1080/01621459.2022.2116331](figures/title-abstract.png)</center>
 
-![<https://doi.org/10.1080/01621459.2022.2116331>](figures/title-abstract.png)
+## Summary
 
-</center>
+1.  Clustering using agglomerative (hierarchical) clustering is common.
+
+2.  Hypothesis testing of the difference in means of such clusters has inflated Type I error rate.
+
+3.  Clustering and hypothesis testing performed on same dataset ('double dipping') is the cause.
+
+4.  Selective inference can control Type I error rate.
+
+## Hypothesis Testing
+
+A staple of modern statistics!
+
+$$H_0: \textrm{Null hypothesis}$$
+
+$$H_A: \textrm{Alternative hypothesis}$$
+
+For example,
+
+$H_0:$ means of two clusters are indistinguishable ($\mu_\mathcal{C_1} = \mu_\mathcal{C_2}$)
+
+$H_A:$ means of two clusters are different ($\mu_\mathcal{C_1} \ne \mu_\mathcal{C_2}$)
 
 
-## Summary 
+## p-value
 
-1. Hypothesis testing for difference in means of clusters.
-2. Clusters have been obtained using agglomerative clustering.
-3. Clustering and hypothesis testing performed on same dataset ('double dipping').
-4. Selective inference for controlling Type I error rate.
+1. Statistic $T$ summarises the data and has a known distribution, e.g., $T \sim \chi^2_N$.
 
-## Type I Error Rate
+2. Calculate that statistic for the observed data, e.g., $T_\textrm{obs}$.
 
-## p-values
+::: {.callout-note icon=false}
+## Definition of p-value
+Assuming the null hypothesis, $H_0$, is true; what is the probability of getting $T \ge T_\textrm{obs}$ or something more extreme?
+
+$$p = \mathbb{P}_{H_0}(T \ge T_\textrm{obs})$$
+:::
+
+##
+
+```{r}
+x <- seq(0,20,0.01)
+plot(x, dchisq(x,6), xlim=c(0,20), type="l", col="blue",
+     xlab = "T", ylab = "Density",
+     main = TeX("$T \\sim \\chi_6^2, T_{obs} = 15$"))
+
+w <- seq(15,20,0.01)
+polygon(c(15, w), c(0, dchisq(w,6)), col="red", border = "red")
+abline(v = 15, lty=2, col="red")
+text(17.5, 0.02, labels = paste0("p = Pr(T > 15) = ", round(pchisq(15, 6, lower.tail = FALSE), digits = 4)))
+```
+
+A "small" p-value suggests that the data is incompatible with assumption that $H_0$ is true.
+
+But how small is "small"?
+
+## Type I Error Rate, $\alpha$
+
+A Type I error is rejecting $H_0$ when it is actually true.
+
+\begin{array}{c|cc}
+                    & H_0 \textrm{ is True}  & H_0 \textrm{ is False} \\
+\hline 
+\textrm{Reject }H_0 & \textbf{Type I error}  & \textrm{True positive} \\
+\textrm{Fail to reject }H_0 & \textrm{True negative} & \textrm{Type II error}
+\end{array}
+
+
+In the long run, we can control our error rate to $\alpha \in [0,1]$ by only rejecting $H_0$ when $p \lt \alpha$.
+
+$\alpha$ is decided by the investigator.
 
 ## Agglomerative Clustering
 
+A "bottom-up" method of hierarchical clustering:
 
-## "Double Dipping"
+1. Treat each observation as a cluster
+2. Calculate similarity between clusters
+3. Merge clusters together based on linkage criteria.
+4. Update the dendrogram which tracks the clusters. 
+4. Continue until all clusters are merged.
+
+
+## Example
 
 ```{r}
 N <- 100
@@ -50,13 +118,16 @@ dat <- data.frame(
   X2 = rnorm(N)
 )
 
-dat |> 
+p1 <- dat |> 
   ggplot() +
   aes(x = X1, y = X2) +
   geom_point() +
   coord_fixed() +
   theme_bw(base_size=14) 
+
+p1
 ```
+## Example
 
 ```{r}
 hc <- fastcluster::hclust(dist(dat)^2, "average")
@@ -64,6 +135,21 @@ hc <- fastcluster::hclust(dist(dat)^2, "average")
 dat <- dat |> 
   mutate(cluster = factor(cutree(hc, k = K)))
 
+p2 <- dat |> 
+  ggplot() +
+  aes(x = X1, y = X2, colour = cluster) +
+  geom_point() +
+  labs(colour = "Cluster") +
+  coord_fixed() +
+  theme_bw(base_size=14) +
+  theme(legend.position = "top")
+
+p2 + ggdendrogram(hc)
+```
+
+## Hypothesis Test of Means
+
+```{r}
 dat_centroids <- dat |> 
   group_by(cluster) |> 
   summarise(X1bar = mean(X1),
@@ -73,13 +159,17 @@ dat |>
   ggplot() +
   aes(x = X1, y = X2, colour = cluster) +
   geom_point() +
-  geom_point(aes(x=X1bar, y=X2bar, col=cluster), shape=17, cex=6, data=dat_centroids) + 
+  geom_point(aes(x=X1bar, y=X2bar, col=cluster), shape=17, cex=4, data=dat_centroids) + 
+  labs(colour = "Cluster") +
   coord_fixed() +
-  theme_bw(base_size=14) 
+  theme_bw(base_size=14)  +
+  theme(legend.position = "top")
 ```
 
+## Hypothesis Test of Means
 
 ```{r}
+#| include: false
 dat <- dat |> 
   rowwise() |> 
   mutate( mu_i = (X1 + X2)/2 ) |> 
@@ -87,13 +177,32 @@ dat <- dat |>
 
 dat |> 
   group_by(cluster) |> 
-  summarise(n = n(), mu_bar = mean(mu_i))
+  summarise(n = n())
 ```
 
 ```{r}
-lm(mu_i ~ cluster, dat) |> emmeans(pairwise ~ cluster)
+emm <- lm(mu_i ~ cluster, dat) |> emmeans(pairwise ~ cluster)
+
+emm$emmeans
 ```
 
+```{r}
+emm$contrasts
+```
+
+But!
+
+$$ X_1 \sim N(0,1),\ X_2 \sim N(0,1) \qquad X_1 \perp X_2$$
+
+## "Double Dipping"
+
+Using the same data to generate a hypothesis and test that hypothesis.
+
+e.g., cluster the data and then test the different of means of those clusters.
+
+<center>
+![](figures/double-dipping.jpeg){width=50%}
+</center>
 
 ## Sample Splitting
 
@@ -114,23 +223,21 @@ dat_training_centroids <- dat_training |>
   summarise(X1bar = mean(X1),
             X2bar = mean(X2))
 
-dat_training |> 
+p3 <- dat_training |> 
   ggplot() +
   aes(x = X1, y = X2, colour = cluster) +
   geom_point() +
   geom_point(aes(x=X1bar, y=X2bar, col=cluster), shape=17, cex=6, data=dat_training_centroids) + 
   coord_fixed() +
-  theme_bw(base_size=14) 
+  theme_bw(base_size=14) +
+  theme(legend.position = "top")
 ```
 
 ```{r}
-lm(mu_i ~ cluster, dat_training) |> emmeans(pairwise ~ cluster)
+emm2 <- lm(mu_i ~ cluster, dat_training) |> emmeans(pairwise ~ cluster)
 ```
 
-
 ```{r}
-library(class)
-
 dat_test <- dat_test |> 
   mutate(cluster = knn(dat_training[,1:2], dat_test, dat_training$cluster, k = K)) |> 
   rowwise() |> 
@@ -142,20 +249,69 @@ dat_test_centroids <- dat_test |>
   summarise(X1bar = mean(X1),
             X2bar = mean(X2))
 
-dat_test |> 
+p4 <- dat_test |> 
   ggplot() +
   aes(x = X1, y = X2, colour = cluster) +
   geom_point(aes(x=X1bar, y=X2bar, col=cluster), shape=17, cex=6, data=dat_test_centroids) + 
   geom_point() +
   coord_fixed() +
-  theme_bw(base_size=14) 
+  theme_bw(base_size=14) +
+  theme(legend.position = "top")
 ```
 
 ```{r}
-lm(mu_i ~ cluster, dat_test) |> emmeans(pairwise ~ cluster)
+emm3 <- lm(mu_i ~ cluster, dat_test) |> emmeans(pairwise ~ cluster)
 ```
 
-## Palmer Penguins
+```{r}
+p3+ p4
+```
+
+## Sample Splitting
+
+```{r}
+emm3$emmeans
+emm3$contrasts
+```
+
+There is still leakage of information.
+
+## Selective Inference {.smaller}
+
+We have a matrix normal distribution:
+
+$$ \boldsymbol{X} \sim \mathcal{MN_{n \times q}}(\boldsymbol\mu, \boldsymbol I_n, \sigma^2\boldsymbol{I}_q)$$
+
+where $\boldsymbol\mu$ has as rows vectors $\mu_i$ with $q$ elements.
+
+After applying clustering to $\boldsymbol{x}$ we get the clusters $\{\mathcal{\hat{C}}_1, \dots, \mathcal{\hat{C}}_K\}$.
+
+The mean of any cluster $\mathcal{\hat{C}_k}$ in :
+
+$$\bar\mu_{\mathcal{\hat{C}_k}} = \frac{1}{|\mathcal{\hat{C}}_k|} \sum_{i \in \mathcal{\hat{C}}_k} \mu_i$$
+
+We want to test
+
+$$H_0: \bar\mu_{\mathcal{\hat{C}_{k}}} = \bar\mu_{\mathcal{\hat{C}_{k'}}}$$
+
+## Hypothesis Test {.smaller}
+
+Wald Test
+
+$$p = \mathbb{P}\left( \chi^2_q \ \ge \ \kappa \| \bar{x}_{\hat{\mathcal{C}}_k} - \bar{x}_{\hat{\mathcal{C}}_{k'}} \|_2^2 \right)$$
+
+Corrected Test
+
+$$p = \mathbb{P}_{H_0}\left( \| \bar{X}_{\hat{\mathcal{C}}_k} - \bar{X}_{\hat{\mathcal{C}}_{k'}} \|_2 \ \ge \ \| \bar{x}_{\hat{\mathcal{C}}_k} - \bar{x}_{\hat{\mathcal{C}}_{k'}} \|_2 \mid \textrm{Clustering results in }\hat{\mathcal{C}}_k, \hat{\mathcal{C}}_{k'} \right)$$
+
+New p-value:
+
+Of all the datasets that result in clusters $\hat{\mathcal{C}}_k$ and $\hat{\mathcal{C}}_{k'}$, what is the probability, assuming no difference in means, that we see such a large difference in the sample means $\bar\mu_{\mathcal{\hat{C}_k}}$ and $\bar\mu_{\mathcal{\hat{C}_{k'} }}$?
+
+
+
+
+## Example: Palmer Penguins
 
 ```{r}
 penguin_dat <- penguins |> 
@@ -172,12 +328,16 @@ penguin_dat |>
   theme_bw(base_size=14) + ggtitle("Penguins") + theme(legend.position="right")
 ```
 
+##
+
 ```{r}
 X <- as.matrix(penguin_dat[, -1]) 
 hcl <- hclust(dist(X, method="euclidean")^2, method="average") 
 plot(as.dendrogram(hcl), leaflab="none")
 abline(h=(hcl$height[nrow(X) - 6] + 50), lty="dashed", col="darkgrey")
 ```
+
+##
 
 ```{r}
 plot(as.dendrogram(hcl), leaflab="none")
@@ -200,26 +360,31 @@ penguin_dat |>
   theme_bw(base_size=14) + ggtitle("Penguins") + theme(legend.position="right") 
 ```
 
+## Example
+
+Cluster 1 vs Cluster 2
+
+```{r}
+test_hier_clusters_exact(X, link="average", K=6, k1=1, k2=2, hcl=hcl)
+```
+
+Cluster 4 vs Cluster 5
+
+```{r}
+test_hier_clusters_exact(X, link="average", K=6, k1=4, k2=5, hcl=hcl)
+```
 
 
-## Results
+## Takeaways
 
-![](figures/fig1.png)
+- We're told to form hypotheses first before looking at the data but that's not what happens in practice.
 
-##
+- Double dipping will increase Type I error rate.
 
-![](figures/fig2.png)
+- Data splitting does not mitigate double dipping and is wasteful.
 
-##
+- Instead, condition on fact that the hypothesis was generated from the data.
 
-![](figures/fig3.png){width=600px}
+- Multiple testing is not always easy to detect.
 
-## Conclusions
-
-
-
-## Statistical Takeaways
-
-
-
-
+- Same issue appears in classification and regression trees, and changepoint detection.
