@@ -328,9 +328,9 @@ penguin_dat |>
   theme_bw(base_size=14) + ggtitle("Penguins") + theme(legend.position="right")
 ```
 
-##
 
 ```{r}
+#| include: false
 X <- as.matrix(penguin_dat[, -1]) 
 hcl <- hclust(dist(X, method="euclidean")^2, method="average") 
 plot(as.dendrogram(hcl), leaflab="none")
@@ -348,6 +348,8 @@ rect_hier_clusters(hcl, k=6, which=1:6, border=RColorBrewer::brewer.pal(6, "Dark
 ```{r}
 table(penguin_dat$species, cutree(hcl,k=6))
 ```
+
+## 
 
 ```{r}
 penguin_dat |> 
@@ -367,6 +369,7 @@ Cluster 1 vs Cluster 2
 ```{r}
 test_hier_clusters_exact(X, link="average", K=6, k1=1, k2=2, hcl=hcl)
 ```
+## Example 
 
 Cluster 4 vs Cluster 5
 
